@@ -1,0 +1,29 @@
+/* src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.bg-cork { /* This class might still be used by Tailwind config, or we can remove it if boardConfig handles it all */
+  /* background-image: url('https://www.transparenttextures.com/patterns/cork-board.png'); */ /* Moved to dynamic style */
+  /* background-color: #d4a373; */ /* Moved to dynamic style */
+}
+
+@layer base {
+  .font-handwriting {
+    font-family: 'Caveat', cursive;
+  }
+}
+
+.note-shadow {
+  box-shadow: 
+    0 4px 6px rgba(0, 0, 0, 0.1),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.pin-shadow {
+  box-shadow: 
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    0 1px 2px rgba(0, 0, 0, 0.1);
+}
