@@ -37,6 +37,26 @@ interface RotationStartInfo {
   centerY: number;
 }
 
+interface ModalAnimationState {
+  initialX: number;
+  initialY: number;
+  initialScale: number;
+  initialRotation: number;
+  targetX: string; // e.g., '-50%'
+  targetY: string; // e.g., '-50%'
+  targetScale: number;
+  targetRotation: number;
+  opacity: number;
+  isAnimating: boolean;
+}
+
+const initialModalAnimState: ModalAnimationState = {
+    initialX: 0, initialY: 0, initialScale: 0.3, initialRotation: 0,
+    targetX: '-50%', targetY: '-50%', targetScale: 1, targetRotation: 0,
+    opacity: 0, isAnimating: false,
+};
+
+
 export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialItems: propInitialItems }) => {
   const [boardItems, setBoardItems] = useState<PinnedItem[]>(propInitialItems || []);
   const [boardConfig, setBoardConfig] = useState<BoardConfig>(DEFAULT_BOARD_CONFIG);
@@ -74,10 +94,12 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
   const [isPlaying, setIsPlaying] = useState(false);
   const [userInteracted, setUserInteracted] = useState(false);
   const originalBodyCursor = useRef<string>('');
-
-  // For smoother dragging
+  
   const dragRafId = useRef<number | null>(null);
   const latestDragPosition = useRef<{ x: number, y: number } | null>(null);
+
+  const [modalAnimation, setModalAnimation] = useState<ModalAnimationState>(initialModalAnimState);
+  const modalRef = useRef<HTMLDivElement>(null);
 
 
   const debouncedSaveData = useCallback(debounce(saveBoardData, 1200), []);
@@ -117,7 +139,7 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
     if (window.confirm("Are you sure you want to delete this item? This cannot be undone.")) {
       const updatedItems = boardItems.filter(item => item.id !== itemId);
       setBoardItems(updatedItems);
-      if (activeItemId === itemId) setActiveItemId(null);
+      if (activeItemId === itemId) setActiveItemId(null); // This will also trigger closeActiveItem logic
       if (editingContentItemId === itemId) setEditingContentItemId(null);
       if (editingPinSettingsItemId === itemId) setEditingPinSettingsItemId(null);
       handleSave(updatedItems);
@@ -164,18 +186,111 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
     setCurrentEditorContent(content);
   }, []);
   
-  const handleItemClick = (item: PinnedItem) => { /* Unchanged */
+  const handleItemClick = (item: PinnedItem) => {
     if (draggingItemId || rotatingItemId || (isAdmin && editingPinSettingsItemId === item.id)) return;
+    
     if (activeItemId !== item.id) {
-      setActiveItemId(item.id);
-      setCurrentEditorContent(item.detailedContent);
-      bringToFront(item.id);
+        const itemElement = itemRefs.current[item.id];
+        if (itemElement && modalRef.current) {
+            const itemRect = itemElement.getBoundingClientRect();
+            // const modalRect = modalRef.current.getBoundingClientRect(); // Modal isn't visible yet to get accurate rect
+
+            // Calculate initial transform based on item's center relative to viewport center
+            // The modal is `position: fixed; left: 50%; top: 50%`
+            // So, its natural center (before transform) is viewport center.
+            // We want to find where itemRect.left + itemRect.width / 2 is relative to window.innerWidth / 2
+            
+            const itemCenterX = itemRect.left + itemRect.width / 2;
+            const itemCenterY = itemRect.top + itemRect.height / 2;
+
+            const viewportCenterX = window.innerWidth / 2;
+            const viewportCenterY = window.innerHeight / 2;
+
+            // Translate needed to move modal's center (viewport center) to item's center
+            const initialX = itemCenterX - viewportCenterX;
+            const initialY = itemCenterY - viewportCenterY;
+            
+            // Approximate initial scale based on item width vs modal max width
+            const modalMaxWidth = Math.min(window.innerWidth * 0.9, 672); // 672px is max-w-2xl
+            const initialScale = Math.min(1, itemRect.width / modalMaxWidth) * 0.8; // Start a bit smaller
+
+            setModalAnimation({
+                initialX,
+                initialY,
+                initialScale,
+                initialRotation: item.rotation, // Start with item's rotation
+                targetX: '-50%', // Final transform for centering
+                targetY: '-50%',
+                targetScale: 1,
+                targetRotation: 0, // Final rotation for modal
+                opacity: 0,       // Start transparent
+                isAnimating: true,
+            });
+        }
+        
+        setActiveItemId(item.id);
+        setCurrentEditorContent(item.detailedContent);
+        bringToFront(item.id);
     }
   };
 
-  const closeActiveItem = () => { /* Unchanged */
+  // Effect to trigger the "to target" part of the animation
+  useEffect(() => {
+    if (activeItemId && modalAnimation.isAnimating && modalAnimation.opacity === 0) {
+      // After initial state is set (opacity 0, transformed), transition to final state
+      requestAnimationFrame(() => { // Ensures previous state is painted
+        setModalAnimation(prev => ({
+            ...prev,
+            initialX: 0, // This is not used for the style directly after first step
+            initialY: 0, // This is not used for the style directly after first step
+            initialScale: 1, // Not for style, but for logic
+            initialRotation: 0,
+            opacity: 1, // Fade in
+            // Target X,Y,Scale,Rotation remain the same, they define the destination
+        }));
+      });
+    }
+  }, [activeItemId, modalAnimation.isAnimating, modalAnimation.opacity]);
+
+
+  const closeActiveItem = () => {
     if (editingContentItemId) setEditingContentItemId(null);
-    setActiveItemId(null);
+    
+    // Start exit animation
+    const currentActiveItem = boardItems.find(i => i.id === activeItemId);
+    const itemElement = activeItemId ? itemRefs.current[activeItemId] : null;
+
+    if (currentActiveItem && itemElement) {
+        const itemRect = itemElement.getBoundingClientRect();
+        const itemCenterX = itemRect.left + itemRect.width / 2;
+        const itemCenterY = itemRect.top + itemRect.height / 2;
+        const viewportCenterX = window.innerWidth / 2;
+        const viewportCenterY = window.innerHeight / 2;
+        const finalX = itemCenterX - viewportCenterX;
+        const finalY = itemCenterY - viewportCenterY;
+        const modalMaxWidth = Math.min(window.innerWidth * 0.9, 672);
+        const finalScale = Math.min(1, itemRect.width / modalMaxWidth) * 0.8;
+
+        setModalAnimation(prev => ({
+            ...prev,
+            targetX: `${finalX}px`, // Animate towards item's relative position
+            targetY: `${finalY}px`,
+            targetScale: finalScale,
+            targetRotation: currentActiveItem.rotation,
+            opacity: 0,
+            isAnimating: true, // Keep isAnimating true to apply target styles
+        }));
+
+        // After animation duration, truly hide modal and reset activeItemId
+        setTimeout(() => {
+            setActiveItemId(null);
+            setModalAnimation(initialModalAnimState); // Reset for next time
+        }, 300); // Match CSS transition duration
+    } else {
+        // Fallback if item not found or no animation needed
+        setActiveItemId(null);
+        setModalAnimation(initialModalAnimState);
+    }
   };
 
   const handleStartDragItem = (e: React.MouseEvent, item: PinnedItem) => { /* Unchanged */
@@ -220,39 +335,14 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
     document.body.style.cursor = 'grabbing';
   };
 
-  const updateDraggedItemPosition = () => {
-    if (draggingItemId && latestDragPosition.current && itemRefs.current[draggingItemId]) {
-        const itemRef = itemRefs.current[draggingItemId]!;
-        // Direct DOM manipulation for transform during drag for smoothness
-        // Position will be set in React state on mouseUp
-        itemRef.style.transform = `translate(${latestDragPosition.current.x - parseFloat(itemRef.style.left || '0')}px, ${latestDragPosition.current.y - parseFloat(itemRef.style.top || '0')}px) rotate(${boardItems.find(it => it.id === draggingItemId)?.rotation || 0}deg)`;
-    }
-    dragRafId.current = null; // Allow next frame request
-  };
-
-
-  const handleMouseMove = useCallback((e: MouseEvent) => {
+  const handleMouseMove = useCallback((e: MouseEvent) => { /* Unchanged */
     if (!containerRef.current) return;
     const boardRect = containerRef.current.getBoundingClientRect();
-
     if (draggingItemId) {
       const newX = e.clientX - boardRect.left - dragStartOffset.x;
       const newY = e.clientY - boardRect.top - dragStartOffset.y;
-      
-      // Store latest position for RAF
       latestDragPosition.current = { x: newX, y: newY };
-
-      // Update actual React state less frequently or via RAF
-      // For now, let's try direct style update in RAF and state update on mouseUp
-      if (!dragRafId.current) {
-          // If we want to update style directly in RAF:
-          // dragRafId.current = requestAnimationFrame(updateDraggedItemPosition); 
-          // But this requires items to use translate for positioning, not left/top directly from React state during drag.
-          // For simplicity with current left/top state, we'll continue updating state here, 
-          // but ensure CSS transitions are minimal during drag.
-          setBoardItems(prevItems => prevItems.map(it => it.id === draggingItemId ? { ...it, position: { x: newX, y: newY } } : it));
-      }
-
+      setBoardItems(prevItems => prevItems.map(it => it.id === draggingItemId ? { ...it, position: { x: newX, y: newY } } : it));
     } else if (rotatingItemId && rotationStartInfo) {
       const { mouseStartAngle, itemInitialRotation, centerX, centerY } = rotationStartInfo;
       const currentMouseAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
@@ -260,29 +350,24 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
       const newRotation = itemInitialRotation + angleDiff;
       setBoardItems(prevItems => prevItems.map(it => it.id === rotatingItemId ? { ...it, rotation: newRotation } : it));
     }
-  }, [draggingItemId, rotatingItemId, dragStartOffset, rotationStartInfo, boardItems]); // Removed boardItems if using RAF for drag
+  }, [draggingItemId, rotatingItemId, dragStartOffset, rotationStartInfo]); // Removed boardItems from dep if using RAF
 
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = useCallback(() => { /* Unchanged */
     if (dragRafId.current) {
         cancelAnimationFrame(dragRafId.current);
         dragRafId.current = null;
     }
-
     if (draggingItemId && latestDragPosition.current) {
-        // Final state update for dragged item
         setBoardItems(prevItems => prevItems.map(it => 
             it.id === draggingItemId && latestDragPosition.current
             ? { ...it, position: { x: latestDragPosition.current.x, y: latestDragPosition.current.y } } 
             : it
         ));
-        // Reset direct style if applied
         if (itemRefs.current[draggingItemId]) {
-            const itemBeingDragged = boardItems.find(i => i.id === draggingItemId);
+            const itemBeingDragged = boardItems.find(i => i.id === draggingItemId); // Use current boardItems
             itemRefs.current[draggingItemId]!.style.transform = `rotate(${itemBeingDragged?.rotation || 0}deg)`;
         }
     }
-
-
     if (draggingItemId || rotatingItemId) {
       handleSave();
     }
@@ -295,10 +380,10 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
     if (originalBodyCursor.current !== undefined || document.body.style.cursor !== 'default') {
         document.body.style.cursor = originalBodyCursor.current || 'default';
     }
-  }, [draggingItemId, rotatingItemId, handleSave, boardItems]); // Added boardItems dependency
+  }, [draggingItemId, rotatingItemId, handleSave, boardItems]);
 
 
-  useEffect(() => {
+  useEffect(() => { /* Mouse move/up listeners - unchanged */
     if (draggingItemId || rotatingItemId) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
@@ -459,18 +544,37 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
 
   const activeItemObject = boardItems.find(item => item.id === activeItemId);
 
+  // Determine modal style based on animation state
+  const getModalStyle = (): React.CSSProperties => {
+    if (!activeItemId && !modalAnimation.isAnimating) { // Fully closed, not animating out
+        return { opacity: 0, transform: 'translate(-50%, -50%) scale(0.9)', pointerEvents: 'none' };
+    }
+    if (activeItemId && modalAnimation.isAnimating && modalAnimation.opacity === 0) { // First step of "open" animation
+        return {
+            transform: `translate(${modalAnimation.initialX}px, ${modalAnimation.initialY}px) scale(${modalAnimation.initialScale}) rotate(${modalAnimation.initialRotation}deg)`,
+            opacity: 0,
+        };
+    }
+    // "Open" animation target state, or "Close" animation current state
+    return {
+        transform: `translate(${modalAnimation.targetX}, ${modalAnimation.targetY}) scale(${modalAnimation.targetScale}) rotate(${modalAnimation.targetRotation}deg)`,
+        opacity: modalAnimation.opacity,
+    };
+  };
+
+
   if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-orange-50 text-lg">Loading Pinboard...</div>;
 
   return (
-    <div className={`min-h-screen bg-orange-50 overflow-hidden ${activeItemId ? 'fixed inset-0' : 'relative'}`} onClick={handleFirstInteraction}>
+    <div className={`min-h-screen bg-orange-50 overflow-hidden ${activeItemId && modalAnimation.opacity > 0 ? 'fixed inset-0' : 'relative'}`} onClick={handleFirstInteraction}>
       <audio ref={audioRef} loop src={boardConfig.backgroundMusicUrl || ''} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} />
 
-      <div /* Backdrop for active item - unchanged */
-        className={`fixed inset-0 z-[1400] transition-all duration-500 ease-in-out 
-          ${activeItemId ? 'opacity-100 backdrop-blur-md bg-black/60' : 'opacity-0 pointer-events-none'}`}
-        onClick={closeActiveItem}
+      <div /* Backdrop for active item */
+        className={`fixed inset-0 z-[1400] transition-opacity duration-300 ease-out 
+          ${activeItemId && modalAnimation.opacity > 0 ? 'opacity-100 backdrop-blur-md bg-black/60' : 'opacity-0 pointer-events-none'}`}
+        onClick={closeActiveItem} // Use the new closeActiveItem for animation
       >
-        {activeItemId && (
+        {activeItemId && modalAnimation.opacity > 0 && (
             <button onClick={(e) => { e.stopPropagation(); closeActiveItem(); }} className="fixed top-4 right-4 md:top-6 md:right-6 text-white/80 hover:text-white bg-transparent rounded-full p-2 z-[1600]" aria-label="Close item"> <X size={32} /> </button>
         )}
       </div>
@@ -487,79 +591,55 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
         <button onClick={toggleMute} className="fixed bottom-4 left-4 z-[2000] bg-black/50 text-white rounded-full p-2.5 shadow-lg hover:bg-black/70 transition-colors" aria-label={isMuted ? "Unmute" : "Mute"}> {isMuted ? <VolumeX size={22}/> : <Volume2 size={22}/>} </button>
       )}
 
-      <div /* Board container - unchanged */
+      <div /* Board container */
         ref={containerRef}
-        className={`relative w-full h-full min-h-screen bg-no-repeat bg-cover bg-center transition-transform duration-500 ease-in-out
-          ${activeItemId ? 'scale-[0.95] opacity-60' : 'scale-100 opacity-100'} 
+        className={`relative w-full h-full min-h-screen bg-no-repeat bg-cover bg-center 
+          transition-transform duration-300 ease-out // Shorter duration for board shrink
+          ${activeItemId && modalAnimation.opacity > 0 ? 'scale-[0.95] opacity-60' : 'scale-100 opacity-100'} 
         `}
         style={{ 
           backgroundColor: boardConfig.backgroundColor,
           backgroundImage: `url(${boardConfig.backgroundImageUrl})`,
         }}
       >
-        {boardItems.sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0)).map((item) => {
-          if (item.id === activeItemId) return null;
-          const dimensions = getItemDimensions(item);
-          const itemWidth = typeof dimensions.width === 'number' ? dimensions.width : 200; // ensure number for calculations
-          // const itemHeight = typeof dimensions.height === 'number' ? dimensions.height : 150; // ensure number
+        {boardItems.map((item) => {
+          // Hide original item if it's the one animating into the modal
+          if (item.id === activeItemId && modalAnimation.isAnimating) return null; 
 
+          const dimensions = getItemDimensions(item);
+          const itemWidth = typeof dimensions.width === 'number' ? dimensions.width : 200;
           const isPinEditingThisItem = isAdmin && editingPinSettingsItemId === item.id;
-          
           let itemCursor = 'pointer';
           if (isAdmin) {
             if (isPinEditingThisItem) itemCursor = 'crosshair';
           }
-
-          // Item style, including CSS transition for smoother drag release
-          // Note: During active drag, we ideally want no transition or a very fast one.
-          // The `transition-all duration-100 ease-linear` is a compromise.
-          // For truly smooth drag, direct manipulation (e.g., via transform: translate) without React state updates per frame is better.
           const itemStyle: React.CSSProperties = {
-            left: `${item.position.x}px`,
-            top: `${item.position.y}px`,
-            zIndex: item.zIndex,
-            width: `${itemWidth}px`,
-            height: typeof dimensions.height === 'number' ? `${dimensions.height}px` : dimensions.height,
-            transform: `rotate(${item.rotation}deg)`,
-            cursor: itemCursor,
-            transitionProperty: 'left, top, transform, opacity, box-shadow, scale', // Ensure all animated props are listed
-            transitionDuration: (draggingItemId === item.id || rotatingItemId === item.id) ? '0ms' : '200ms', // No transition during active manipulation, smooth release
-            transitionTimingFunction: 'ease-out',
+            left: `${item.position.x}px`, top: `${item.position.y}px`, zIndex: item.zIndex,
+            width: `${itemWidth}px`, height: typeof dimensions.height === 'number' ? `${dimensions.height}px` : dimensions.height,
+            transform: `rotate(${item.rotation}deg)`, cursor: itemCursor,
+            transitionProperty: 'left, top, transform, opacity, box-shadow, scale',
+            transitionDuration: (draggingItemId === item.id || rotatingItemId === item.id) ? '50ms' : '200ms', // Faster during manipulation
+            transitionTimingFunction: (draggingItemId === item.id || rotatingItemId === item.id) ? 'linear' : 'ease-out',
           };
-
-
-          // Admin controls positioning logic
           let adminControlsStyle: React.CSSProperties = {
-            position: 'absolute',
-            top: '-0.625rem', // -top-2.5
-            right: '-0.625rem', // -right-2.5
-            zIndex: 20,
+            position: 'absolute', top: '-0.625rem', right: '-0.625rem', zIndex: 20,
           };
-
           if (isPinEditingThisItem) {
             adminControlsStyle = {
-              ...adminControlsStyle,
-              top: '0px', 
-              left: `${itemWidth + 10}px`, // Position to the right of the item with a 10px gap
-              right: 'auto', // Reset right positioning
+              ...adminControlsStyle, top: '0px', left: `${itemWidth + 10}px`, right: 'auto',
             };
           }
-
 
           return (
             <div 
               key={item.id} ref={el => itemRefs.current[item.id] = el}
               className={`absolute group transform ${(draggingItemId === item.id || rotatingItemId === item.id) ? 'opacity-75 shadow-2xl scale-105' : ''}`}
               style={itemStyle}
-              onClick={(e) => {
-                if (isPinEditingThisItem) { 
-                  e.stopPropagation(); 
-                  handlePlacePinOnClick(e, item);
-                } else if (!draggingItemId && !rotatingItemId) {
-                  handleItemClick(item);
-                }
+              onClick={(e) => { /* Item click logic - unchanged */
+                if (isPinEditingThisItem) { e.stopPropagation(); handlePlacePinOnClick(e, item); } 
+                else if (!draggingItemId && !rotatingItemId) { handleItemClick(item); }
               }}
-              onMouseMove={(e) => {
+              onMouseMove={(e) => { /* Pin preview mouse move - unchanged */
                 if (isPinEditingThisItem && itemRefs.current[item.id]) {
                   const itemElement = itemRefs.current[item.id];
                   const itemRect = itemElement!.getBoundingClientRect();
@@ -570,53 +650,40 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
                   setPreviewPinPosition({ itemId: item.id, x: previewXPercent, y: previewYPercent });
                 }
               }}
-              onMouseLeave={() => {
-                if (isPinEditingThisItem) {
-                  setPreviewPinPosition(null);
-                }
+              onMouseLeave={() => { /* Pin preview mouse leave - unchanged */
+                if (isPinEditingThisItem) { setPreviewPinPosition(null); }
               }}
             >
               <div className="relative w-full h-full">
+                {/* Item content (image/note) - unchanged */}
                 {item.type === 'image' ? ( <img src={item.content} alt={item.title} className="w-full h-full object-contain rounded block hover:drop-shadow-lg" style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.2))' }} draggable={false} loading="lazy"/>
                 ) : ( <div className="bg-yellow-50 p-4 h-full note-shadow rounded flex flex-col justify-between"> <h3 className="font-handwriting text-xl font-bold mb-2 text-center border-b border-amber-200 pb-1">{item.title}</h3> <p className="font-handwriting text-base whitespace-pre-line overflow-y-auto flex-grow scrollbar-thin scrollbar-thumb-amber-300 scrollbar-track-yellow-100">{item.content}</p> </div> )}
                 
+                {/* Pin display - unchanged */}
                 {item.pinEnabled && ( <div className={`item-pin absolute w-4 h-4 rounded-full pin-shadow ${item.pinColor}`} style={{ left: `${item.pinPosition.x}%`, top: `${item.pinPosition.y}%`, transform: 'translate(-50%, -50%)', zIndex: 10 }} onClick={(e) => e.stopPropagation()}/> )}
                 
+                {/* Pin preview ghost - unchanged */}
                 {isPinEditingThisItem && previewPinPosition?.itemId === item.id && (
                   <div className={`absolute w-3 h-3 rounded-full ${item.pinColor} opacity-60 pointer-events-none ring-1 ring-black/20`} style={{ left: `${previewPinPosition.x}%`, top: `${previewPinPosition.y}%`, transform: 'translate(-50%, -50%)', zIndex: 11 }}/>
                 )}
 
+                {/* Admin controls panel - unchanged structure, uses adminControlsStyle */}
                 {isAdmin && !activeItemId && (
-                  <div 
-                    // className="item-admin-controls opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col gap-1.5 bg-slate-700/80 backdrop-blur-sm p-1.5 rounded-md shadow-lg"
-                    className={`item-control-button absolute -top-3 ${editingPinSettingsItemId === item.id ? '-right-[7rem]' : '-right-3'} opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1.5 bg-slate-700/80 backdrop-blur-sm p-1.5 rounded-md shadow-lg z-20`}
-
-                    // style={adminControlsStyle}
-                    onClick={e => e.stopPropagation()}
-                    onMouseDown={e => e.stopPropagation()}
-                  >
-                    {editingPinSettingsItemId === item.id ? (
-                      <>
+                  <div className="item-admin-controls opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col gap-1.5 bg-slate-700/80 backdrop-blur-sm p-1.5 rounded-md shadow-lg" style={adminControlsStyle} onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+                    {editingPinSettingsItemId === item.id ? ( /* Pin settings content */ <>
                         <div className="text-white text-xs px-1 pt-0.5 font-semibold">Pin Options:</div>
                         <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-600/50 rounded">
-                          {PIN_COLORS.map(color => (
-                            <button key={color} title={`Set pin to ${color.split('-')[1] || 'color'}`} onClick={() => handleChangePinColor(item.id, color)} className={`w-5 h-5 rounded-full ${color} border-2 ${item.pinColor === color ? 'border-white ring-2 ring-offset-0 ring-white/70' : 'border-slate-400/30'} hover:opacity-80 transform hover:scale-110 transition-all`}/>
-                          ))}
+                          {PIN_COLORS.map(color => ( <button key={color} title={`Set pin to ${color.split('-')[1] || 'color'}`} onClick={() => handleChangePinColor(item.id, color)} className={`w-5 h-5 rounded-full ${color} border-2 ${item.pinColor === color ? 'border-white ring-2 ring-offset-0 ring-white/70' : 'border-slate-400/30'} hover:opacity-80 transform hover:scale-110 transition-all`}/> ))}
                         </div>
                         <label className="flex items-center gap-2 px-1 py-1 text-white text-xs cursor-pointer hover:bg-slate-600/70 rounded transition-colors">
-                          <input type="checkbox" checked={item.pinEnabled} onChange={(e) => handleChangePinEnabled(item.id, e.target.checked)} className="h-3.5 w-3.5 text-sky-500 bg-slate-200 border-slate-400 rounded focus:ring-sky-500 focus:ring-offset-0"/>
-                          Show Pin
-                        </label>
+                          <input type="checkbox" checked={item.pinEnabled} onChange={(e) => handleChangePinEnabled(item.id, e.target.checked)} className="h-3.5 w-3.5 text-sky-500 bg-slate-200 border-slate-400 rounded focus:ring-sky-500 focus:ring-offset-0"/> Show Pin </label>
                         <button title="Delete Item" onClick={() => handleDeleteItem(item.id)} className="p-1.5 text-xs rounded bg-red-500 text-white hover:bg-red-600 flex items-center justify-center gap-1 transition-colors"> <Trash2 size={14} /> Delete </button>
-                        <button title="Finish Pin Editing" onClick={() => handleTogglePinSettings(item.id)} className="p-1.5 text-xs rounded bg-green-500 text-white hover:bg-green-600 flex items-center justify-center gap-1 transition-colors"> <CheckSquare size={14}/> Done </button>
-                      </>
-                    ) : (
-                      <>
+                        <button title="Finish Pin Editing" onClick={() => handleTogglePinSettings(item.id)} className="p-1.5 text-xs rounded bg-green-500 text-white hover:bg-green-600 flex items-center justify-center gap-1 transition-colors"> <CheckSquare size={14}/> Done </button> </>
+                    ) : ( /* Standard item controls */ <>
                         <button title="Move Item" onMouseDown={(e) => handleStartDragItem(e, item)} className="p-1.5 rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors cursor-grab"> <Move size={16} /> </button>
                         <button title="Rotate Item" onMouseDown={(e) => handleStartRotateItem(e, item)} className="p-1.5 rounded bg-orange-500 text-white hover:bg-orange-600 transition-colors cursor-grab"> <RotateCcw size={16} /> </button>
                         <button title="Edit Pin (Color & Position)" onClick={() => handleTogglePinSettings(item.id)} className={`p-1.5 rounded bg-sky-500 text-white hover:bg-sky-600 transition-colors`}> <Palette size={16} /> </button>
-                        <button title="Delete Item" onClick={() => handleDeleteItem(item.id)} className="p-1.5 rounded bg-red-500 text-white hover:bg-red-600 transition-colors"> <Trash2 size={16} /> </button>
-                      </>
+                        <button title="Delete Item" onClick={() => handleDeleteItem(item.id)} className="p-1.5 rounded bg-red-500 text-white hover:bg-red-600 transition-colors"> <Trash2 size={16} /> </button> </>
                     )}
                   </div>
                 )}
@@ -626,10 +693,25 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
         })}
       </div>
 
-      {/* ACTIVE ITEM MODAL with animation - unchanged */}
-      <div key={activeItemObject?.id || 'modal-placeholder'} className={`fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[1500] w-[90vw] max-w-2xl max-h-[90vh] flex flex-col transition-all duration-300 ease-out ${activeItemObject ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'}`}>
-        {activeItemObject && (
+      {/* ACTIVE ITEM MODAL with new animation style */}
+      <div
+        ref={modalRef}
+        key={activeItemObject?.id || 'modal-placeholder'}
+        className="fixed left-1/2 top-1/2 z-[1500] 
+                    w-[90vw] max-w-2xl max-h-[90vh] 
+                    flex flex-col transition-all duration-300 ease-out // Handles transform, opacity
+                    overflow-visible" // Keep overflow visible for shadows, etc.
+        style={getModalStyle()}
+        // Conditional pointer events based on opacity and if it's active
+        // onTransitionEnd={() => {
+        //   if(modalAnimation.opacity === 0 && !activeItemId) {
+        //     setModalAnimation(prev => ({...prev, isAnimating: false}));
+        //   }
+        // }}
+      >
+        {activeItemObject && ( // Content only rendered when an item is conceptually active
           <>
+            {/* Modal Content (image/note, editor) - unchanged */}
             <div className="flex-shrink-0 p-3 sm:p-4">
                 {activeItemObject.type === 'image' ? ( <img src={activeItemObject.content} alt={activeItemObject.title} className="block rounded object-contain max-h-48 sm:max-h-60 md:max-h-72 w-auto mx-auto shadow-xl"/>
                 ) : ( <div className="bg-yellow-50/90 p-4 note-shadow rounded max-w-md mx-auto backdrop-blur-sm"> <h3 className="font-handwriting text-xl font-bold mb-2 text-center border-b border-amber-200 pb-1 text-slate-800">{activeItemObject.title}</h3> <p className="font-handwriting text-lg whitespace-pre-line text-slate-700">{activeItemObject.content}</p> </div> )}
@@ -637,8 +719,7 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
             <div className="flex-grow p-3 sm:p-4 md:p-6 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-400/50 scrollbar-track-transparent text-white">
                 {!editingContentItemId || editingContentItemId !== activeItemObject.id ? ( <div className="prose prose-sm sm:prose-base prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: activeItemObject.detailedContent }} />
                 ) : ( <div className="bg-slate-100 p-2 rounded text-slate-800"> <Editor apiKey={TINYMCE_API_KEY} onInit={(evt, editor) => editorRef.current = editor} initialValue={activeItemObject?.detailedContent} value={currentEditorContent} onEditorChange={handleEditorChange} init={{ height: 300, menubar: false, plugins: ['advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview', 'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen', 'insertdatetime', 'media', 'table', 'help', 'wordcount'], toolbar: 'undo redo | blocks | bold italic forecolor | alignleft aligncenter alignright justify | bullist numlist outdent indent | removeformat | image media link | code | help', content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:14px }'}} /> </div> )}
-                {isAdmin && (
-                    <div className="mt-6 pt-4 border-t border-gray-500/50 flex gap-3">
+                {isAdmin && ( <div className="mt-6 pt-4 border-t border-gray-500/50 flex gap-3">
                         {(!editingContentItemId || editingContentItemId !== activeItemObject.id) ? ( <button onClick={() => handleStartEditContent(activeItemObject)} className="px-4 py-2 bg-indigo-600/80 hover:bg-indigo-500/90 text-white rounded flex items-center gap-2 text-sm shadow-md"><Edit3 size={18} /> Edit Content</button>
                         ) : ( <> <button onClick={handleSaveContent} className="px-4 py-2 bg-green-600/80 hover:bg-green-500/90 text-white rounded flex items-center gap-2 text-sm shadow-md"><Save size={18} /> Save</button> <button onClick={handleCancelEditContent} className="px-4 py-2 bg-gray-600/80 hover:bg-gray-500/90 text-white rounded flex items-center gap-2 text-sm shadow-md"><RotateCcw size={18} /> Cancel</button> </> )}
                     </div>
@@ -648,33 +729,9 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
         )}
       </div>
 
-      {isAddingItemModalOpen && isAdmin && ( /* Add item modal - unchanged */
-         <div className="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm z-[2500] flex items-center justify-center p-4" onClick={() => setIsAddingItemModalOpen(false)}>
-          <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-semibold mb-4">Add New Pinned Item</h3>
-            <div className="space-y-4">
-              <div><label htmlFor="itemType" className="block text-sm font-medium text-gray-700 mb-1">Type</label><select id="itemType" value={newItemDetails.type} onChange={e => setNewItemDetails({...newItemDetails, type: e.target.value as 'image'|'note'})} className="w-full p-2 border border-gray-300 rounded-md shadow-sm"><option value="image">Image</option><option value="note">Note</option></select></div>
-              <div><label htmlFor="itemTitle" className="block text-sm font-medium text-gray-700 mb-1">Title</label><input type="text" id="itemTitle" value={newItemDetails.title} onChange={e => setNewItemDetails({...newItemDetails, title: e.target.value})} className="w-full p-2 border border-gray-300 rounded-md shadow-sm"/></div>
-              {newItemDetails.type === 'image' && (<div><label htmlFor="itemContentUrl" className="block text-sm font-medium text-gray-700 mb-1">Image URL</label><input type="url" id="itemContentUrl" value={newItemDetails.content} onChange={e => setNewItemDetails({...newItemDetails, content: e.target.value})} className="w-full p-2 border border-gray-300 rounded-md shadow-sm" placeholder="https://..."/></div>)}
-              {newItemDetails.type === 'note' && (<div><label htmlFor="itemContentNote" className="block text-sm font-medium text-gray-700 mb-1">Short Note Content</label><textarea id="itemContentNote" value={newItemDetails.content} onChange={e => setNewItemDetails({...newItemDetails, content: e.target.value})} rows={3} className="w-full p-2 border border-gray-300 rounded-md shadow-sm" placeholder="A brief description..."/></div>)}
-              <div className="flex justify-end gap-3 pt-2"><button onClick={() => setIsAddingItemModalOpen(false)} className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200">Cancel</button><button onClick={handleSubmitNewItem} className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-1.5">{newItemDetails.type === 'image' ? <ImagePlus size={16}/> : <FileText size={16}/>} Add</button></div>
-            </div>
-          </div>
-        </div>
-      )}
-      {isBoardConfigModalOpen && isAdmin && ( /* Board config modal - unchanged */
-        <div className="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm z-[2500] flex items-center justify-center p-4" onClick={() => setIsBoardConfigModalOpen(false)}>
-            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-                <h3 className="text-xl font-semibold mb-6">Board Configuration</h3>
-                <div className="space-y-4">
-                    <div><label htmlFor="boardBgUrl" className="block text-sm font-medium text-gray-700 mb-1">Background Image URL</label><input type="url" id="boardBgUrl" value={tempBoardConfig.backgroundImageUrl} onChange={e => setTempBoardConfig({...tempBoardConfig, backgroundImageUrl: e.target.value})} className="w-full p-2 border border-gray-300 rounded-md shadow-sm"/></div>
-                    <div><label htmlFor="boardBgColor" className="block text-sm font-medium text-gray-700 mb-1">Background Color</label><div className="flex items-center gap-2"><input type="text" id="boardBgColor" value={tempBoardConfig.backgroundColor} onChange={e => setTempBoardConfig({...tempBoardConfig, backgroundColor: e.target.value})} className="w-full p-2 border border-gray-300 rounded-md shadow-sm"/><input type="color" value={tempBoardConfig.backgroundColor} onChange={e => setTempBoardConfig({...tempBoardConfig, backgroundColor: e.target.value})} className="p-1 h-10 w-10 border border-gray-300 rounded-md shadow-sm cursor-pointer"/></div></div>
-                    <div><label htmlFor="boardMusicUrl" className="block text-sm font-medium text-gray-700 mb-1">BG Music URL (optional)</label><input type="url" id="boardMusicUrl" value={tempBoardConfig.backgroundMusicUrl || ''} onChange={e => setTempBoardConfig({...tempBoardConfig, backgroundMusicUrl: e.target.value || null})} className="w-full p-2 border border-gray-300 rounded-md shadow-sm" placeholder="https://..."/></div>
-                </div>
-                <div className="flex justify-end gap-3 pt-8"><button onClick={() => setIsBoardConfigModalOpen(false)} className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200">Cancel</button><button onClick={handleSaveBoardConfig} className="px-4 py-2 text-sm text-white bg-green-600 rounded-md hover:bg-green-700">Save Config</button></div>
-            </div>
-        </div>
-      )}
+      {/* Other Modals (Add Item, Board Config) - unchanged */}
+      {isAddingItemModalOpen && isAdmin && ( <div className="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm z-[2500] flex items-center justify-center p-4" onClick={() => setIsAddingItemModalOpen(false)}> <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}> <h3 className="text-xl font-semibold mb-4">Add New Pinned Item</h3> <div className="space-y-4"> <div><label htmlFor="itemType" className="block text-sm font-medium text-gray-700 mb-1">Type</label><select id="itemType" value={newItemDetails.type} onChange={e => setNewItemDetails({...newItemDetails, type: e.target.value as 'image'|'note'})} className="w-full p-2 border border-gray-300 rounded-md shadow-sm"><option value="image">Image</option><option value="note">Note</option></select></div> <div><label htmlFor="itemTitle" className="block text-sm font-medium text-gray-700 mb-1">Title</label><input type="text" id="itemTitle" value={newItemDetails.title} onChange={e => setNewItemDetails({...newItemDetails, title: e.target.value})} className="w-full p-2 border border-gray-300 rounded-md shadow-sm"/></div> {newItemDetails.type === 'image' && (<div><label htmlFor="itemContentUrl" className="block text-sm font-medium text-gray-700 mb-1">Image URL</label><input type="url" id="itemContentUrl" value={newItemDetails.content} onChange={e => setNewItemDetails({...newItemDetails, content: e.target.value})} className="w-full p-2 border border-gray-300 rounded-md shadow-sm" placeholder="https://..."/></div>)} {newItemDetails.type === 'note' && (<div><label htmlFor="itemContentNote" className="block text-sm font-medium text-gray-700 mb-1">Short Note Content</label><textarea id="itemContentNote" value={newItemDetails.content} onChange={e => setNewItemDetails({...newItemDetails, content: e.target.value})} rows={3} className="w-full p-2 border border-gray-300 rounded-md shadow-sm" placeholder="A brief description..."/></div>)} <div className="flex justify-end gap-3 pt-2"><button onClick={() => setIsAddingItemModalOpen(false)} className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200">Cancel</button><button onClick={handleSubmitNewItem} className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-1.5">{newItemDetails.type === 'image' ? <ImagePlus size={16}/> : <FileText size={16}/>} Add</button></div> </div> </div> </div> )}
+      {isBoardConfigModalOpen && isAdmin && ( <div className="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm z-[2500] flex items-center justify-center p-4" onClick={() => setIsBoardConfigModalOpen(false)}> <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}> <h3 className="text-xl font-semibold mb-6">Board Configuration</h3> <div className="space-y-4"> <div><label htmlFor="boardBgUrl" className="block text-sm font-medium text-gray-700 mb-1">Background Image URL</label><input type="url" id="boardBgUrl" value={tempBoardConfig.backgroundImageUrl} onChange={e => setTempBoardConfig({...tempBoardConfig, backgroundImageUrl: e.target.value})} className="w-full p-2 border border-gray-300 rounded-md shadow-sm"/></div> <div><label htmlFor="boardBgColor" className="block text-sm font-medium text-gray-700 mb-1">Background Color</label><div className="flex items-center gap-2"><input type="text" id="boardBgColor" value={tempBoardConfig.backgroundColor} onChange={e => setTempBoardConfig({...tempBoardConfig, backgroundColor: e.target.value})} className="w-full p-2 border border-gray-300 rounded-md shadow-sm"/><input type="color" value={tempBoardConfig.backgroundColor} onChange={e => setTempBoardConfig({...tempBoardConfig, backgroundColor: e.target.value})} className="p-1 h-10 w-10 border border-gray-300 rounded-md shadow-sm cursor-pointer"/></div></div> <div><label htmlFor="boardMusicUrl" className="block text-sm font-medium text-gray-700 mb-1">BG Music URL (optional)</label><input type="url" id="boardMusicUrl" value={tempBoardConfig.backgroundMusicUrl || ''} onChange={e => setTempBoardConfig({...tempBoardConfig, backgroundMusicUrl: e.target.value || null})} className="w-full p-2 border border-gray-300 rounded-md shadow-sm" placeholder="https://..."/></div> </div> <div className="flex justify-end gap-3 pt-8"><button onClick={() => setIsBoardConfigModalOpen(false)} className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200">Cancel</button><button onClick={handleSaveBoardConfig} className="px-4 py-2 text-sm text-white bg-green-600 rounded-md hover:bg-green-700">Save Config</button></div> </div> </div> )}
     </div>
   );
 };
