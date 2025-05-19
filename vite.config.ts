@@ -4,8 +4,13 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-console.log(env.JSONBIN_MASTER_KEY);
+  const repoName = env.GITHUB_REPOSITORY ? env.GITHUB_REPOSITORY.split('/')[1] : 'anca_rk'; 
+
   return {
+    // ---> ADD THIS BASE CONFIGURATION <---
+    base: mode === 'production' ? `/${repoName}/` : '/', // Crucial for GitHub Pages
+    // ---> END BASE CONFIGURATION <---
+
     define: {
       'process.env.JSONBIN_MASTER_KEY': JSON.stringify(env.JSONBIN_MASTER_KEY),
       'process.env.JSONBIN_BIN_ID': JSON.stringify(env.JSONBIN_BIN_ID),
