@@ -5,8 +5,6 @@ const BIN_ID = process.env.JSONBIN_BIN_ID || '';
 const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 const LATEST_URL = `${API_URL}/latest`;
 
-console.log(MASTER_KEY);
-
 interface BoardData {
   items: any[]; // Define a proper type later, should match PinnedItem[]
   boardConfig: {
