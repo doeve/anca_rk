@@ -602,7 +602,7 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
   return (
     <div className={`min-h-screen bg-orange-50 overflow-hidden ${activeItemId && modalAnimation.opacity > 0 ? 'fixed inset-0' : 'relative'}`} onClick={handleFirstInteraction}>
       <audio ref={audioRef} loop src={boardConfig.backgroundMusicUrl || ''} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} />
-      <div className={`fixed inset-0 z-[1400] transition-opacity duration-300 ease-out ${activeItemId && modalAnimation.opacity > 0 ? 'opacity-100 backdrop-blur-md bg-black/60' : 'opacity-0 pointer-events-none'}`} onClick={closeActiveItem}>
+      <div className={`fixed inset-0 z-[1400] transition-opacity duration-300 ease-out ${activeItemId && modalAnimation.opacity > 0 ? 'opacity-60 backdrop-blur-sm bg-black/60' : 'opacity-0 pointer-events-none'}`} onClick={closeActiveItem}>
         {activeItemId && modalAnimation.opacity > 0 && ( <button onClick={(e) => { e.stopPropagation(); closeActiveItem(); }} className="fixed top-4 right-4 md:top-6 md:right-6 text-white/80 hover:text-white bg-transparent rounded-full p-2 z-[1600]" aria-label="Close item"> <X size={32} /> </button> )}
       </div>
       {isAdmin && !activeItemId && ( <div className="fixed top-2 left-2 z-[2000] bg-yellow-200/90 backdrop-blur-sm p-2 rounded shadow-lg flex flex-wrap gap-2 items-center"> <button onClick={handleAddNewItem} className="px-3 py-1.5 rounded text-xs sm:text-sm bg-blue-500 text-white font-medium flex items-center gap-1.5"><PlusCircle size={16}/> Add</button> <button onClick={() => handleSave()} className="px-3 py-1.5 rounded text-xs sm:text-sm bg-purple-500 text-white font-medium flex items-center gap-1.5"><Save size={16}/> Save All</button> <button onClick={handleOpenBoardConfig} className="px-3 py-1.5 rounded text-xs sm:text-sm bg-teal-500 text-white font-medium flex items-center gap-1.5"><Settings size={16}/> Board</button> </div> )}
@@ -716,10 +716,10 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
                 {activeItemObject.type === 'image' ? (
                     activeItemObject.linkUrl ? (
                         <a href={activeItemObject.linkUrl} target="_blank" rel="noopener noreferrer" title={`Open link: ${activeItemObject.linkUrl}`} className="block" onClick={e => e.stopPropagation()}>
-                            <img src={activeItemObject.content} alt={activeItemObject.title} className="block rounded object-contain max-h-48 sm:max-h-60 md:max-h-72 w-auto mx-auto shadow-xl hover:opacity-80 transition-opacity"/>
+                            <img src={activeItemObject.content} alt={activeItemObject.title} className="block rounded object-contain max-h-48 sm:max-h-60 md:max-h-72 w-auto mx-auto hover:opacity-80 transition-opacity"/>
                         </a>
                     ) : (
-                        <img src={activeItemObject.content} alt={activeItemObject.title} className="block rounded object-contain max-h-48 sm:max-h-60 md:max-h-72 w-auto mx-auto shadow-xl"/>
+                        <img src={activeItemObject.content} alt={activeItemObject.title} className="block rounded object-contain max-h-48 sm:max-h-60 md:max-h-72 w-auto mx-auto"/>
                     )
                 ) : ( 
                     <div className="bg-yellow-50/90 p-4 note-shadow rounded max-w-md mx-auto backdrop-blur-sm">
