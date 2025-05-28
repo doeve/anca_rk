@@ -102,6 +102,7 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
 
   const [modalAnimation, setModalAnimation] = useState<ModalAnimationState>(initialModalAnimState);
   const modalRef = useRef<HTMLDivElement>(null);
+  const [bgImageWidth, setBgImageWidth] = useState<number>(1);
 
 
   const debouncedSaveData = useCallback(debounce(saveBoardData, 1200), []);
@@ -568,115 +569,117 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
   if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-orange-50 text-lg">Loading Pinboard...</div>;
 
   return (
-    <div className={`min-h-screen bg-orange-50 overflow-hidden ${activeItemId && modalAnimation.opacity > 0 ? 'fixed inset-0' : 'relative'}`} onClick={handleFirstInteraction}>
-      <audio ref={audioRef} loop src={boardConfig.backgroundMusicUrl || ''} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} />
-      <div className={`fixed inset-0 z-[1400] transition-opacity duration-300 ease-out ${activeItemId && modalAnimation.opacity > 0 ? 'opacity-70 backdrop-blur-sm bg-black' : 'opacity-0 pointer-events-none'}`} onClick={closeActiveItem}>
-        {activeItemId && modalAnimation.opacity > 0 && ( <button onClick={(e) => { e.stopPropagation(); closeActiveItem(); }} className="fixed top-4 right-4 md:top-6 md:right-6 text-white/80 hover:text-white bg-transparent rounded-full p-2 z-[1600]" aria-label="Close item"> <X size={32} /> </button> )}
-      </div>
-      {isAdmin && !activeItemId && ( <div className="fixed top-2 left-2 z-[2000] bg-yellow-200/90 backdrop-blur-sm p-2 rounded shadow-lg flex flex-wrap gap-2 items-center"> <button onClick={handleAddNewItem} className="px-3 py-1.5 rounded text-xs sm:text-sm bg-blue-500 text-white font-medium flex items-center gap-1.5"><PlusCircle size={16}/> Add</button> <button onClick={() => handleSave()} className="px-3 py-1.5 rounded text-xs sm:text-sm bg-purple-500 text-white font-medium flex items-center gap-1.5"><Save size={16}/> Save All</button> <button onClick={handleOpenBoardConfig} className="px-3 py-1.5 rounded text-xs sm:text-sm bg-teal-500 text-white font-medium flex items-center gap-1.5"><Settings size={16}/> Board</button> </div> )}
-      {boardConfig.backgroundMusicUrl && ( <button onClick={toggleMute} className="fixed bottom-4 left-4 z-[2000] bg-black/50 text-white rounded-full p-2.5 shadow-lg hover:bg-black/70 transition-colors" aria-label={isMuted ? "Unmute" : "Mute"}> {isMuted ? <VolumeX size={22}/> : <Volume2 size={22}/>} </button> )}
+    <div className={`min-h-screen flex flex-col justify-center`} style={{ backgroundColor: boardConfig.backgroundColor }} onClick={handleFirstInteraction}>
+      <div className={`overflow-hidden ${activeItemId && modalAnimation.opacity > 0 ? 'fixed inset-0' : 'relative'}`} style={{ backgroundColor: boardConfig.backgroundColor }} onClick={handleFirstInteraction}>
+        <audio ref={audioRef} loop src={boardConfig.backgroundMusicUrl || ''} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} />
+        <div className={`fixed inset-0 z-[1400] transition-opacity duration-300 ease-out ${activeItemId && modalAnimation.opacity > 0 ? 'opacity-70 backdrop-blur-sm bg-black' : 'opacity-0 pointer-events-none'}`} onClick={closeActiveItem}>
+          {activeItemId && modalAnimation.opacity > 0 && ( <button onClick={(e) => { e.stopPropagation(); closeActiveItem(); }} className="fixed top-4 right-4 md:top-6 md:right-6 text-white/80 hover:text-white bg-transparent rounded-full p-2 z-[1600]" aria-label="Close item"> <X size={32} /> </button> )}
+        </div>
+        {isAdmin && !activeItemId && ( <div className="fixed top-2 left-2 z-[2000] bg-yellow-200/90 backdrop-blur-sm p-2 rounded shadow-lg flex flex-wrap gap-2 items-center"> <button onClick={handleAddNewItem} className="px-3 py-1.5 rounded text-xs sm:text-sm bg-blue-500 text-white font-medium flex items-center gap-1.5"><PlusCircle size={16}/> Add</button> <button onClick={() => handleSave()} className="px-3 py-1.5 rounded text-xs sm:text-sm bg-purple-500 text-white font-medium flex items-center gap-1.5"><Save size={16}/> Save All</button> <button onClick={handleOpenBoardConfig} className="px-3 py-1.5 rounded text-xs sm:text-sm bg-teal-500 text-white font-medium flex items-center gap-1.5"><Settings size={16}/> Board</button> </div> )}
+        {boardConfig.backgroundMusicUrl && ( <button onClick={toggleMute} className="fixed bottom-4 left-4 z-[2000] bg-black/50 text-white rounded-full p-2.5 shadow-lg hover:bg-black/70 transition-colors" aria-label={isMuted ? "Unmute" : "Mute"}> {isMuted ? <VolumeX size={22}/> : <Volume2 size={22}/>} </button> )}
+        <div ref={containerRef} className={`relative transition-transform duration-300 ease-out ${activeItemId && modalAnimation.opacity > 0 ? 'scale-[0.95] opacity-60' : 'scale-100 opacity-100'}`}>
+          <img src={boardConfig.backgroundImageUrl} alt="Background" className={`bg-no-repeat bg-cover bg-center`} onLoad={(e) => {setBgImageWidth(e.target.clientWidth);}}/>
+          {boardItems.map((item) => {
+            if (item.id === activeItemId && modalAnimation.isAnimating && modalAnimation.opacity > 0) return null; 
 
-      <div ref={containerRef} className={`relative w-full h-full min-h-screen bg-no-repeat bg-cover bg-center transition-transform duration-300 ease-out ${activeItemId && modalAnimation.opacity > 0 ? 'scale-[0.95] opacity-60' : 'scale-100 opacity-100'}`} style={{ backgroundColor: boardConfig.backgroundColor, backgroundImage: `url(${boardConfig.backgroundImageUrl})`, }}>
-        {boardItems.map((item) => {
-          if (item.id === activeItemId && modalAnimation.isAnimating && modalAnimation.opacity > 0) return null; 
+            const dimensions = getItemDimensions(item);
+            const itemRenderedWidth = typeof dimensions.width === 'number' ? dimensions.width : 200; 
+            
+            const currentItemIsModifiableByAdmin = isAdmin && !activeItemId; // Admin can modify if not in modal view
+            const isPinEditingThisItem = isAdmin && editingPinSettingsItemId === item.id;
+            const itemClickableForModal = isItemInteractable(item);
 
-          const dimensions = getItemDimensions(item);
-          const itemRenderedWidth = typeof dimensions.width === 'number' ? dimensions.width : 200; 
-          
-          const currentItemIsModifiableByAdmin = isAdmin && !activeItemId; // Admin can modify if not in modal view
-          const isPinEditingThisItem = isAdmin && editingPinSettingsItemId === item.id;
-          const itemClickableForModal = isItemInteractable(item);
+            let resolvedItemCursor = 'default';
+            if (isPinEditingThisItem) {
+              resolvedItemCursor = 'crosshair';
+            } else if (itemClickableForModal) {
+              resolvedItemCursor = 'pointer';
+            } else if (isAdmin) { // If not clickable for modal, but admin mode is on, still allow grab for controls
+              resolvedItemCursor = 'default'; // Or 'grab' if we want direct grab on item if admin
+            }
 
-          let resolvedItemCursor = 'default';
-          if (isPinEditingThisItem) {
-            resolvedItemCursor = 'crosshair';
-          } else if (itemClickableForModal) {
-            resolvedItemCursor = 'pointer';
-          } else if (isAdmin) { // If not clickable for modal, but admin mode is on, still allow grab for controls
-            resolvedItemCursor = 'default'; // Or 'grab' if we want direct grab on item if admin
-          }
+            const itemStyle: React.CSSProperties = {
+              left: `${item.position.x}%`, 
+              top: `${item.position.y}%`, 
+              zIndex: item.zIndex,
+              width: `${itemRenderedWidth * bgImageWidth / 1820}px`, 
+              height: typeof dimensions.height === 'number' ? `${dimensions.height * bgImageWidth / 1820}px` : dimensions.height,
+              transform: `rotate(${item.rotation}deg)`, 
+              cursor: resolvedItemCursor,
+              transitionProperty: 'left, top, transform, opacity, box-shadow, width, height',
+              transitionDuration: (draggingItemId === item.id || rotatingItemId === item.id) ? '50ms' : '200ms',
+              transitionTimingFunction: (draggingItemId === item.id || rotatingItemId === item.id) ? 'linear' : 'ease-out'
+            };
+            
+            return (
+              <div 
+                key={item.id} ref={el => itemRefs.current[item.id] = el}
+                className={`absolute group ${(draggingItemId === item.id || rotatingItemId === item.id) ? 'opacity-75 shadow-2xl' : ''} ${(rotatingItemId === item.id) ? 'scale-105' : ''}`}
+                style={itemStyle}
+                onClick={(e) => { 
+                  if (isPinEditingThisItem) { e.stopPropagation(); handlePlacePinOnClick(e, item); } 
+                  else if (!draggingItemId && !rotatingItemId) { handleItemClick(item); }
+                }}
+                onMouseMove={(e) => {
+                  if (isPinEditingThisItem && itemRefs.current[item.id]) {
+                    const itemElement = itemRefs.current[item.id];
+                    if (!itemElement) return;
+                    const itemRect = itemElement.getBoundingClientRect();
+                    const renderedWidth = itemElement.offsetWidth;
+                    const renderedHeight = itemElement.offsetHeight;
+                    const mouseX_viewport = e.clientX;
+                    const mouseY_viewport = e.clientY;
+                    const itemCenterX_viewport = itemRect.left + itemRect.width / 2;
+                    const itemCenterY_viewport = itemRect.top + itemRect.height / 2;
+                    const mouseRelCenterX = mouseX_viewport - itemCenterX_viewport;
+                    const mouseRelCenterY = mouseY_viewport - itemCenterY_viewport;
+                    const itemRotationRad = -item.rotation * (Math.PI / 180);
+                    const localMouseX = mouseRelCenterX * Math.cos(itemRotationRad) - mouseRelCenterY * Math.sin(itemRotationRad);
+                    const localMouseY = mouseRelCenterX * Math.sin(itemRotationRad) + mouseRelCenterY * Math.cos(itemRotationRad);
+                    const finalLocalX = localMouseX + renderedWidth / 2;
+                    const finalLocalY = localMouseY + renderedHeight / 2;
+                    let previewXPercent = (finalLocalX / renderedWidth) * 100;
+                    let previewYPercent = (finalLocalY / renderedHeight) * 100;
+                    previewXPercent = Math.max(0, Math.min(100, previewXPercent));
+                    previewYPercent = Math.max(0, Math.min(100, previewYPercent));
+                    setPreviewPinPosition({ itemId: item.id, x: previewXPercent, y: previewYPercent });
+                  }
+                }}
+                onMouseLeave={() => { if (isPinEditingThisItem) { setPreviewPinPosition(null); } }}
+              >
+                <div className={`relative w-full h-full ${itemClickableForModal ? 'apply-wiggle-on-hover' : ''}`}>
+                  {item.type === 'image' ? ( <img src={item.content} alt={item.title} className="w-full h-full object-contain rounded block hover:drop-shadow-lg" style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.2))' }} draggable={false} loading="lazy"/>
+                  ) : ( <div className="bg-yellow-50 p-4 h-full note-shadow rounded flex flex-col justify-between"> <h3 className="font-handwriting text-xl font-bold mb-2 text-center border-b border-amber-200 pb-1">{item.title}</h3> <p className="font-handwriting text-base whitespace-pre-line overflow-y-auto flex-grow scrollbar-thin scrollbar-thumb-amber-300 scrollbar-track-yellow-100">{item.content}</p> </div> )}
+                  
+                  {item.pinEnabled && ( <div className={`item-pin absolute w-4 h-4 rounded-full pin-shadow ${item.pinColor}`} style={{ left: `${item.pinPosition.x}%`, top: `${item.pinPosition.y}%`, transform: 'translate(-50%, -50%)', zIndex: 10 }} onClick={(e) => e.stopPropagation()}/> )}
+                  
+                  {isPinEditingThisItem && previewPinPosition?.itemId === item.id && (
+                    <div className={`absolute w-3 h-3 rounded-full ${item.pinColor} opacity-60 pointer-events-none ring-1 ring-black/20`} style={{ left: `${previewPinPosition.x}%`, top: `${previewPinPosition.y}%`, transform: 'translate(-50%, -50%)', zIndex: 11 }}/>
+                  )}
 
-          const itemStyle: React.CSSProperties = {
-            left: `${item.position.x}%`, 
-            top: `${item.position.y}%`, 
-            zIndex: item.zIndex,
-            width: `${itemRenderedWidth}px`, 
-            height: typeof dimensions.height === 'number' ? `${dimensions.height}px` : dimensions.height,
-            transform: `rotate(${item.rotation}deg)`, 
-            cursor: resolvedItemCursor,
-            transitionProperty: 'left, top, transform, opacity, box-shadow, width, height',
-            transitionDuration: (draggingItemId === item.id || rotatingItemId === item.id) ? '50ms' : '200ms',
-            transitionTimingFunction: (draggingItemId === item.id || rotatingItemId === item.id) ? 'linear' : 'ease-out',
-          };
-          
-          return (
-            <div 
-              key={item.id} ref={el => itemRefs.current[item.id] = el}
-              className={`absolute group ${(draggingItemId === item.id || rotatingItemId === item.id) ? 'opacity-75 shadow-2xl' : ''} ${(rotatingItemId === item.id) ? 'scale-105' : ''}`}
-              style={itemStyle}
-              onClick={(e) => { 
-                if (isPinEditingThisItem) { e.stopPropagation(); handlePlacePinOnClick(e, item); } 
-                else if (!draggingItemId && !rotatingItemId) { handleItemClick(item); }
-              }}
-              onMouseMove={(e) => {
-                if (isPinEditingThisItem && itemRefs.current[item.id]) {
-                  const itemElement = itemRefs.current[item.id];
-                  if (!itemElement) return;
-                  const itemRect = itemElement.getBoundingClientRect();
-                  const renderedWidth = itemElement.offsetWidth;
-                  const renderedHeight = itemElement.offsetHeight;
-                  const mouseX_viewport = e.clientX;
-                  const mouseY_viewport = e.clientY;
-                  const itemCenterX_viewport = itemRect.left + itemRect.width / 2;
-                  const itemCenterY_viewport = itemRect.top + itemRect.height / 2;
-                  const mouseRelCenterX = mouseX_viewport - itemCenterX_viewport;
-                  const mouseRelCenterY = mouseY_viewport - itemCenterY_viewport;
-                  const itemRotationRad = -item.rotation * (Math.PI / 180);
-                  const localMouseX = mouseRelCenterX * Math.cos(itemRotationRad) - mouseRelCenterY * Math.sin(itemRotationRad);
-                  const localMouseY = mouseRelCenterX * Math.sin(itemRotationRad) + mouseRelCenterY * Math.cos(itemRotationRad);
-                  const finalLocalX = localMouseX + renderedWidth / 2;
-                  const finalLocalY = localMouseY + renderedHeight / 2;
-                  let previewXPercent = (finalLocalX / renderedWidth) * 100;
-                  let previewYPercent = (finalLocalY / renderedHeight) * 100;
-                  previewXPercent = Math.max(0, Math.min(100, previewXPercent));
-                  previewYPercent = Math.max(0, Math.min(100, previewYPercent));
-                  setPreviewPinPosition({ itemId: item.id, x: previewXPercent, y: previewYPercent });
-                }
-              }}
-              onMouseLeave={() => { if (isPinEditingThisItem) { setPreviewPinPosition(null); } }}
-            >
-              <div className={`relative w-full h-full ${itemClickableForModal ? 'apply-wiggle-on-hover' : ''}`}>
-                {item.type === 'image' ? ( <img src={item.content} alt={item.title} className="w-full h-full object-contain rounded block hover:drop-shadow-lg" style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.2))' }} draggable={false} loading="lazy"/>
-                ) : ( <div className="bg-yellow-50 p-4 h-full note-shadow rounded flex flex-col justify-between"> <h3 className="font-handwriting text-xl font-bold mb-2 text-center border-b border-amber-200 pb-1">{item.title}</h3> <p className="font-handwriting text-base whitespace-pre-line overflow-y-auto flex-grow scrollbar-thin scrollbar-thumb-amber-300 scrollbar-track-yellow-100">{item.content}</p> </div> )}
-                
-                {item.pinEnabled && ( <div className={`item-pin absolute w-4 h-4 rounded-full pin-shadow ${item.pinColor}`} style={{ left: `${item.pinPosition.x}%`, top: `${item.pinPosition.y}%`, transform: 'translate(-50%, -50%)', zIndex: 10 }} onClick={(e) => e.stopPropagation()}/> )}
-                
-                {isPinEditingThisItem && previewPinPosition?.itemId === item.id && (
-                  <div className={`absolute w-3 h-3 rounded-full ${item.pinColor} opacity-60 pointer-events-none ring-1 ring-black/20`} style={{ left: `${previewPinPosition.x}%`, top: `${previewPinPosition.y}%`, transform: 'translate(-50%, -50%)', zIndex: 11 }}/>
-                )}
-
-                {currentItemIsModifiableByAdmin && ( // Show controls only if admin and not in modal
-                  <div 
-                  className={`item-control-button absolute -top-3 ${editingPinSettingsItemId === item.id ? '-right-[7rem]' : '-right-3'} opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1.5 bg-slate-700/80 backdrop-blur-sm p-1.5 rounded-md shadow-lg z-20`}
-                  onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
-                    {editingPinSettingsItemId === item.id ? ( <>
-                        <div className="text-white text-xs px-1 pt-0.5 font-semibold">Pin Options:</div>
-                        <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-600/50 rounded"> {PIN_COLORS.map(color => ( <button key={color} title={`Set pin to ${color.split('-')[1] || 'color'}`} onClick={() => handleChangePinColor(item.id, color)} className={`w-5 h-5 rounded-full ${color} border-2 ${item.pinColor === color ? 'border-white ring-2 ring-offset-0 ring-white/70' : 'border-slate-400/30'} hover:opacity-80 transform hover:scale-110 transition-all`}/> ))} </div>
-                        <label className="flex items-center gap-2 px-1 py-1 text-white text-xs cursor-pointer hover:bg-slate-600/70 rounded transition-colors"> <input type="checkbox" checked={item.pinEnabled} onChange={(e) => handleChangePinEnabled(item.id, e.target.checked)} className="h-3.5 w-3.5 text-sky-500 bg-slate-200 border-slate-400 rounded focus:ring-sky-500 focus:ring-offset-0"/> Show Pin </label>
-                        <button title="Delete Item" onClick={() => handleDeleteItem(item.id)} className="p-1.5 text-xs rounded bg-red-500 text-white hover:bg-red-600 flex items-center justify-center gap-1 transition-colors"> <Trash2 size={14} /> Delete </button>
-                        <button title="Finish Pin Editing" onClick={() => handleTogglePinSettings(item.id)} className="p-1.5 text-xs rounded bg-green-500 text-white hover:bg-green-600 flex items-center justify-center gap-1 transition-colors"> <CheckSquare size={14}/> Done </button> </>
-                    ) : ( <>
-                        <button title="Move Item" onMouseDown={(e) => handleStartDragItem(e, item)} className="p-1.5 rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors cursor-grab"> <Move size={16} /> </button>
-                        <button title="Rotate & Scale Item" onMouseDown={(e) => handleStartRotateItem(e, item)} className="p-1.5 rounded bg-orange-500 text-white hover:bg-orange-600 transition-colors cursor-grab"> <RotateCcw size={16} /> </button>
-                        <button title="Edit Pin (Color & Position)" onClick={() => handleTogglePinSettings(item.id)} className={`p-1.5 rounded bg-sky-500 text-white hover:bg-sky-600 transition-colors`}> <Palette size={16} /> </button>
-                        <button title="Delete Item" onClick={() => handleDeleteItem(item.id)} className="p-1.5 rounded bg-red-500 text-white hover:bg-red-600 transition-colors"> <Trash2 size={16} /> </button> </>
-                    )}
-                  </div>
-                )}
+                  {currentItemIsModifiableByAdmin && ( // Show controls only if admin and not in modal
+                    <div 
+                    className={`item-control-button absolute -top-3 ${editingPinSettingsItemId === item.id ? '-right-[7rem]' : '-right-3'} opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1.5 bg-slate-700/80 backdrop-blur-sm p-1.5 rounded-md shadow-lg z-20`}
+                    onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+                      {editingPinSettingsItemId === item.id ? ( <>
+                          <div className="text-white text-xs px-1 pt-0.5 font-semibold">Pin Options:</div>
+                          <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-600/50 rounded"> {PIN_COLORS.map(color => ( <button key={color} title={`Set pin to ${color.split('-')[1] || 'color'}`} onClick={() => handleChangePinColor(item.id, color)} className={`w-5 h-5 rounded-full ${color} border-2 ${item.pinColor === color ? 'border-white ring-2 ring-offset-0 ring-white/70' : 'border-slate-400/30'} hover:opacity-80 transform hover:scale-110 transition-all`}/> ))} </div>
+                          <label className="flex items-center gap-2 px-1 py-1 text-white text-xs cursor-pointer hover:bg-slate-600/70 rounded transition-colors"> <input type="checkbox" checked={item.pinEnabled} onChange={(e) => handleChangePinEnabled(item.id, e.target.checked)} className="h-3.5 w-3.5 text-sky-500 bg-slate-200 border-slate-400 rounded focus:ring-sky-500 focus:ring-offset-0"/> Show Pin </label>
+                          <button title="Delete Item" onClick={() => handleDeleteItem(item.id)} className="p-1.5 text-xs rounded bg-red-500 text-white hover:bg-red-600 flex items-center justify-center gap-1 transition-colors"> <Trash2 size={14} /> Delete </button>
+                          <button title="Finish Pin Editing" onClick={() => handleTogglePinSettings(item.id)} className="p-1.5 text-xs rounded bg-green-500 text-white hover:bg-green-600 flex items-center justify-center gap-1 transition-colors"> <CheckSquare size={14}/> Done </button> </>
+                      ) : ( <>
+                          <button title="Move Item" onMouseDown={(e) => handleStartDragItem(e, item)} className="p-1.5 rounded bg-blue-500 text-white hover:bg-blue-600 transition-colors cursor-grab"> <Move size={16} /> </button>
+                          <button title="Rotate & Scale Item" onMouseDown={(e) => handleStartRotateItem(e, item)} className="p-1.5 rounded bg-orange-500 text-white hover:bg-orange-600 transition-colors cursor-grab"> <RotateCcw size={16} /> </button>
+                          <button title="Edit Pin (Color & Position)" onClick={() => handleTogglePinSettings(item.id)} className={`p-1.5 rounded bg-sky-500 text-white hover:bg-sky-600 transition-colors`}> <Palette size={16} /> </button>
+                          <button title="Delete Item" onClick={() => handleDeleteItem(item.id)} className="p-1.5 rounded bg-red-500 text-white hover:bg-red-600 transition-colors"> <Trash2 size={16} /> </button> </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       <div 
