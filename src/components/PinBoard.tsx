@@ -569,7 +569,7 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
   if (isLoading) return <div className="h-[100dvh] flex items-center justify-center bg-orange-50 text-lg">Loading Pinboard...</div>;
 
   return (
-    <div className={`h-[100dvh] flex flex-col justify-center`} style={{ backgroundColor: boardConfig.backgroundColor }} onClick={handleFirstInteraction}>
+    <div className={`h-[100dvh] w-[100dvw] flex flex-col justify-center`} style={{ backgroundColor: boardConfig.backgroundColor }} onClick={handleFirstInteraction}>
       <div className={`overflow-hidden relative`} style={{ backgroundColor: boardConfig.backgroundColor }} onClick={handleFirstInteraction}>
         <audio ref={audioRef} loop src={boardConfig.backgroundMusicUrl || ''} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} />
         <div className={`fixed inset-0 z-[1400] transition-opacity duration-300 ease-out ${activeItemId && modalAnimation.opacity > 0 ? 'opacity-70 backdrop-blur-sm bg-black' : 'opacity-0 pointer-events-none'}`} onClick={closeActiveItem}>
