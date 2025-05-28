@@ -566,7 +566,7 @@ export const PinBoard: React.FC<{ initialItems?: PinnedItem[] }> = ({ initialIte
     };
   };
 
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-orange-50 text-lg">Loading Pinboard...</div>;
+  if (isLoading) return <div className="h-[100dvh] flex items-center justify-center bg-orange-50 text-lg">Loading Pinboard...</div>;
 
   return (
     <div className={`h-[100dvh] flex flex-col justify-center`} style={{ backgroundColor: boardConfig.backgroundColor }} onClick={handleFirstInteraction}>
