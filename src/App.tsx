@@ -98,7 +98,7 @@ const initialBoardItems: PinnedItem[] = [
 
 function App() {
   return (
-    <div className="min-h-screen bg-orange-50">
+    <div className="bg-orange-50">
       <PinBoard initialItems={initialBoardItems} />
     </div>
   );
